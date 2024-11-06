@@ -1,0 +1,60 @@
+Path: test_dir/dir1
+Size: 4096 bytes
+Type: Directory
+Permissions: 750
+Last Modified: Tue Nov  5 23:57:15 2024
+-------------------
+Path: test_dir/dir2
+Size: 4096 bytes
+Type: Directory
+Permissions: 750
+Last Modified: Tue Nov  5 23:57:15 2024
+-------------------
+Path: test_dir/dir1/subdir1
+Size: 4096 bytes
+Type: Directory
+Permissions: 750
+Last Modified: Tue Nov  5 23:57:15 2024
+-------------------
+Path: test_dir/dir3
+Size: 4096 bytes
+Type: Directory
+Permissions: 750
+Last Modified: Tue Nov  5 23:57:15 2024
+-------------------
+Path: test_dir/dir2/subdir2
+Size: 4096 bytes
+Type: Directory
+Permissions: 750
+Last Modified: Tue Nov  5 23:57:15 2024
+-------------------
+Path: test_dir/dir1/file1.txt
+Size: 1048576 bytes
+Type: Regular File
+Permissions: 640
+Last Modified: Tue Nov  5 23:57:15 2024
+-------------------
+Path: test_dir/dir1/subdir1/small.txt
+Size: 6 bytes
+Type: Regular File
+Permissions: 640
+Last Modified: Tue Nov  5 23:57:15 2024
+-------------------
+Path: test_dir/dir3/symlink.txt
+Size: 23 bytes
+Type: Symbolic Link
+Permissions: 777
+Last Modified: Tue Nov  5 23:57:15 2024
+-------------------
+Path: test_dir/dir2/file2.txt
+Size: 2097152 bytes
+Type: Regular File
+Permissions: 640
+Last Modified: Tue Nov  5 23:57:15 2024
+-------------------
+Path: test_dir/dir2/subdir2/tiny.txt
+Size: 6 bytes
+Type: Regular File
+Permissions: 640
+Last Modified: Tue Nov  5 23:57:15 2024
+-------------------
