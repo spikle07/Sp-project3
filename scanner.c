@@ -3,17 +3,18 @@
 #include <string.h>
 #include <pthread.h>
 #include <dirent.h>
-#include <sys/stat.h>    // for mode_t and stat functions
-#include <sys/types.h>   // for off_t and other system types
+#include <sys/stat.h>    
+#include <sys/types.h>   
 #include <unistd.h>
 #include <signal.h>
 #include <errno.h>
-#include <time.h>        // for time_t and time functions
+#include <time.h>        
+#include <stdatomic.h>  // Added for atomic operations
+
 #define MAX_PATH_LENGTH 4096
 #define MAX_THREADS 8
 #define QUEUE_SIZE 1000
 
-// Structure to hold file information
 typedef struct {
     char path[MAX_PATH_LENGTH];
     off_t size;
@@ -21,7 +22,6 @@ typedef struct {
     time_t mtime;
 } FileInfo;
 
-// Structure for the work queue
 typedef struct {
     char paths[QUEUE_SIZE][MAX_PATH_LENGTH];
     int front;
@@ -30,26 +30,36 @@ typedef struct {
     pthread_mutex_t mutex;
     pthread_cond_t not_empty;
     pthread_cond_t not_full;
+    int waiting_threads;
+    atomic_int active_processes;  // Added: Counter for active processes
 } WorkQueue;
 
-// Global variables
 WorkQueue work_queue;
 pthread_t thread_pool[MAX_THREADS];
 volatile sig_atomic_t running = 1;
 FILE* output_file;
 pthread_mutex_t output_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// Initialize the work queue
 void queue_init(WorkQueue* queue) {
     queue->front = 0;
     queue->rear = -1;
     queue->count = 0;
+    queue->waiting_threads = 0;
+    atomic_init(&queue->active_processes, 0);  // Initialize active processes counter
     pthread_mutex_init(&queue->mutex, NULL);
     pthread_cond_init(&queue->not_empty, NULL);
     pthread_cond_init(&queue->not_full, NULL);
 }
 
-// Add a path to the work queue
+void check_termination_condition(WorkQueue* queue) {
+    int active = atomic_load(&queue->active_processes);
+    if (active == 0 && queue->count == 0) {
+        // If no active processes and queue is empty, terminate
+        printf("No active processes and empty queue. Initiating self-termination.\n");
+        kill(getpid(), SIGTERM);
+    }
+}
+
 void queue_push(WorkQueue* queue, const char* path) {
     pthread_mutex_lock(&queue->mutex);
     
@@ -71,13 +81,17 @@ void queue_push(WorkQueue* queue, const char* path) {
     pthread_mutex_unlock(&queue->mutex);
 }
 
-// Get a path from the work queue
 int queue_pop(WorkQueue* queue, char* path) {
     pthread_mutex_lock(&queue->mutex);
     
+    queue->waiting_threads++;
+    
     while (queue->count == 0 && running) {
+        check_termination_condition(queue);  // Check termination condition while waiting
         pthread_cond_wait(&queue->not_empty, &queue->mutex);
     }
+    
+    queue->waiting_threads--;
     
     if (queue->count == 0) {
         pthread_mutex_unlock(&queue->mutex);
@@ -93,14 +107,12 @@ int queue_pop(WorkQueue* queue, char* path) {
     return 1;
 }
 
-// Signal handler for graceful termination
 void handle_signal(int signum) {
     running = 0;
     pthread_cond_broadcast(&work_queue.not_empty);
     pthread_cond_broadcast(&work_queue.not_full);
 }
 
-// Process a single file
 void process_file(const char* path) {
     struct stat st;
     if (lstat(path, &st) == -1) {
@@ -127,14 +139,16 @@ void process_file(const char* path) {
     pthread_mutex_unlock(&output_mutex);
 }
 
-// Worker thread function
 void* worker_thread(void* arg) {
     char path[MAX_PATH_LENGTH];
-    
+    pthread_t thread_id = pthread_self();
+    printf("Thread ID: %lu started\n", (unsigned long)thread_id);
     while (running) {
         if (!queue_pop(&work_queue, path)) {
             break;
         }
+        
+        atomic_fetch_add(&work_queue.active_processes, 1);  // Increment active processes
         
         DIR* dir = opendir(path);
         if (dir) {
@@ -160,6 +174,9 @@ void* worker_thread(void* arg) {
             }
             closedir(dir);
         }
+        
+        atomic_fetch_sub(&work_queue.active_processes, 1);  // Decrement active processes
+        check_termination_condition(&work_queue);  // Check termination condition after processing
     }
     
     return NULL;
@@ -171,24 +188,19 @@ int main(int argc, char* argv[]) {
         return 1;
     }
     
-    // Set up signal handling
     signal(SIGINT, handle_signal);
     signal(SIGTERM, handle_signal);
     
-    // Initialize work queue
     queue_init(&work_queue);
     
-    // Open output file
     output_file = fopen(argv[2], "w");
     if (!output_file) {
         perror("Failed to open output file");
         return 1;
     }
     
-    // Add initial directory to queue
     queue_push(&work_queue, argv[1]);
     
-    // Create worker threads
     for (int i = 0; i < MAX_THREADS; i++) {
         if (pthread_create(&thread_pool[i], NULL, worker_thread, NULL) != 0) {
             fprintf(stderr, "Failed to create thread %d\n", i);
@@ -197,12 +209,10 @@ int main(int argc, char* argv[]) {
         }
     }
     
-    // Wait for worker threads to finish
     for (int i = 0; i < MAX_THREADS; i++) {
         pthread_join(thread_pool[i], NULL);
     }
     
-    // Clean up
     fclose(output_file);
     pthread_mutex_destroy(&output_mutex);
     pthread_mutex_destroy(&work_queue.mutex);
